@@ -1,3 +1,6 @@
+FROM nginx:1.27
+COPY default.conf /etc/nginx/conf.d/
+
 FROM golang:1.26 AS builder
 
 WORKDIR /app

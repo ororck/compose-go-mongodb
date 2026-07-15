@@ -2,8 +2,6 @@ services:
   app:
     restart: on-failure
     build: .
-    ports:
-      - "5000:5000"
     environment:
       MONGODB_HOST: mongo
       MONGODB_PORT: 27017
@@ -19,6 +17,14 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+  
+  front:
+    build:
+      context: ./nginx
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
 
   mongo:
     restart: on-failure

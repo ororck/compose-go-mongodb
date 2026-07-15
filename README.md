@@ -140,15 +140,22 @@ docker compose logs app
  
 ```
 .
-├── compose.yml            # orchestration des services
-├── Dockerfile             # build multi-stage de l'application Go
+
+├── compose.yml            
+├── Dockerfile             
+l'application Go
 ├── .dockerignore
-├── .gitignore             # exclut notamment secrets/
-├── main.go                # point d'entrée, connexion MongoDB
-├── handlers.go            # handlers HTTP
+├── .gitignore             
+├── main.go                
+MongoDB
+├── handlers.go            
 ├── go.mod / go.sum
-├── Makefile               # cibles utilitaires
-└── secrets/               # NON versionné — contient mongo_password.txt
+├── Makefile               
+├── secrets/               
+└──mongo_password.txt
+nginx
+├── default.conf               
+└── Dockerfile               
 ```
  
 ---
@@ -165,6 +172,6 @@ docker compose logs app
 - [x] Application démarrée uniquement après que la base soit prête
 
 **Brief 2**
-- [ ] L'application reste accessible
-- [ ] Le load balancer reçoit le trafic
-- [ ] Le trafic est distribué entre les réplicas (vérifié via les logs)
+- [x] L'application reste accessible
+- [x] Le load balancer reçoit le trafic
+- [x] Le trafic est distribué entre les réplicas (vérifié via les logs)
