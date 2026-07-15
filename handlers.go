@@ -11,7 +11,7 @@ import (
 
 func healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status": "healthy",
+		"status": "baguette",
 	})
 }
 

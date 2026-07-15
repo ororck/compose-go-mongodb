@@ -1,0 +1,44 @@
+services:
+  app:
+    restart: on-failure
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      MONGODB_HOST: mongo
+      MONGODB_PORT: 27017
+      PORT: 5000
+      MONGODB_USER: admin
+      MONGODB_PASSWORD_FILE: /run/secrets/mongo_password 
+    secrets:
+      - mongo_password
+    develop:
+      watch:
+        - path: .
+          action: rebuild
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    restart: on-failure
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/mongo_password
+    secrets:
+      - mongo_password
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo_data:
+
+secrets:
+  mongo_password:
+    file: ./secrets/mongo_password.txt

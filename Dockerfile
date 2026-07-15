@@ -1,4 +1,4 @@
-FROM golang:1.26 as builder
+FROM golang:1.26 AS builder
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o main .
 
-FROM gcr.io/distroless/static-debian12 as runtime
+FROM gcr.io/distroless/static-debian12 AS runtime
 
 WORKDIR /app
 

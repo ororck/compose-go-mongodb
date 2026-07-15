@@ -6,15 +6,15 @@ APP_PORT := 8080
 
 .PHONY: docker.create.network
 docker.create.network:
-	podman network create go-mongodb
+	docker network create go-mongodb
 
 .PHONY: docker.build.app
 docker.build.app:
-	podman build -t app .
+	docker build -t app .
 
 .PHONY: docker.run.app
 docker.run.app:
-	podman run --rm \
+	docker run --rm \
 		-p $(APP_PORT):$(APP_PORT) \
 		-e PORT=$(APP_PORT) \
 		-e MONGODB_HOST=$(MONGODB_CONTAINER_NAME) \
@@ -24,7 +24,7 @@ docker.run.app:
 
 .PHONY: docker.run.mongodb
 docker.run.mongodb:
-	podman run --rm \
+	docker run --rm \
 		-p $(MONGODB_PORT):$(MONGODB_PORT) \
 		-d \
 		--network=$(NETWORK_NAME) \

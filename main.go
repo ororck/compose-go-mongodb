@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -25,9 +26,32 @@ func main() {
 		log.Fatal("MONGODB_PORT environment variable is not set")
 	}
 
+	mongodbUser, found := os.LookupEnv("MONGODB_USER")
+	if !found {
+		log.Fatal("MONGODB_USER environment variable is not set")
+	}
+
+	passwordFile, found := os.LookupEnv("MONGODB_PASSWORD_FILE")
+	if !found {
+		log.Fatal("MONGODB_PASSWORD_FILE environment variable is not set")
+	}
+
+	passwordBytes, err := os.ReadFile(passwordFile)
+	if err != nil {
+		log.Fatalf("failed to read password file: %v", err)
+	}
+	mongodbPassword := strings.TrimSpace(string(passwordBytes))
+
 	connectionString := fmt.Sprintf("mongodb://%s:%s", mongodbHost, mongodbPort)
 
-	client, err := mongo.Connect(options.Client().ApplyURI(connectionString))
+	clientOpts := options.Client().
+		ApplyURI(connectionString).
+		SetAuth(options.Credential{
+			Username: mongodbUser,
+			Password: mongodbPassword,
+		})
+
+	client, err := mongo.Connect(clientOpts)
 	if err != nil {
 		log.Fatalf("failed to connect to MongoDB: %v", err)
 	}
