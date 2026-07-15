@@ -1,93 +1,170 @@
 # compose-go-mongodb
-
-
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
+ 
+Infrastructure conteneurisée avec **Docker Compose** : une API web en **Go** (framework Gin) connectée à une base de données **MongoDB**, avec persistance, gestion des secrets, health checks et hot reload en développement.
+ 
+Ce dépôt couvre deux briefs successifs :
+1. **Brief 1** — Orchestration Compose de l'application Go + MongoDB.
+2. **Brief 2** — Mise à l'échelle de l'application et répartition de charge via un load balancer.
+---
+ 
+## Architecture
+ 
+L'application expose trois routes HTTP :
+ 
+| Méthode | Route       | Description                                              |
+|---------|-------------|---------------------------------------------------------|
+| `GET`   | `/`         | Insère un document horodaté dans MongoDB et le renvoie. |
+| `GET`   | `/healthz`  | Renvoie l'état de santé de l'application.                |
+| `GET`   | `/logs`     | Renvoie tous les documents stockés en base.             |
+ 
+---
+ 
+## Prérequis
+ 
+- Docker Engine et Docker Compose v2 (`docker compose version`)
+- Un fichier de secret pour le mot de passe MongoDB (voir ci-dessous)
+---
+ 
+## Démarrage rapide
+ 
+Avant le premier lancement, créer le secret contenant le mot de passe MongoDB :
+ 
+```bash
+mkdir -p secrets
+echo "monMotDePasseSolide" > secrets/mongo_password.txt
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/simplon-tls-devops/compose-go-mongodb.git
-git branch -M main
-git push -uf origin main
+ 
+Puis démarrer l'infrastructure :
+ 
+```bash
+docker compose up -d --build
 ```
+ 
+Vérifier :
+ 
+```bash
+curl localhost:5000/healthz    # {"status":"healthy"}
+curl localhost:5000/           # crée une entrée
+curl localhost:5000/logs       # liste les entrées
+```
+ 
+Arrêter (sans supprimer les données) :
+ 
+```bash
+docker compose down
+```
+ 
+Arrêter et supprimer le volume de données :
+ 
+```bash
+docker compose down -v
+```
+ 
+---
+ 
+## Brief 1 — Compose Go + MongoDB
+ 
+### Fonctionnalités mises en place
+ 
+- **Une seule commande** démarre toute l'infrastructure (application + base de données).
+- L'application est exposée sur le port **5000** de la machine hôte.
+- Les deux conteneurs tournent en **tâche de fond** et sont **redémarrés automatiquement** en cas d'échec (`restart`).
+- Les données MongoDB sont **persistées** dans un volume nommé (`mongo_data`), montée sur `/data/db`.
+- L'application Go est **reconstruite et redémarrée automatiquement** à chaque modification d'un fichier `.go`, grâce à la fonctionnalité `develop.watch` de Compose.
+- Le **mot de passe MongoDB** est géré via un **secret Docker** (`secrets/mongo_password.txt`), exclu de tout commit via `.gitignore`.
+- L'application ne démarre **qu'après** que la base de données soit réellement prête, grâce à un **health check** sur MongoDB et à `depends_on: condition: service_healthy`.
+### Hot reload en développement
+ 
+Pour activer la surveillance des fichiers `.go` et le rebuild automatique :
+ 
+```bash
+docker compose watch
+```
+ 
+Toute modification d'un fichier source déclenche une reconstruction de l'image et le redémarrage du service `app`.
+ 
+### Gestion du secret
+ 
+Le mot de passe n'est jamais écrit en clair dans `compose.yml`, ni exposé en variable d'environnement (invisible dans `docker inspect`).
+ 
+- Côté MongoDB : le mot de passe est lu depuis un fichier via `MONGO_INITDB_ROOT_PASSWORD_FILE`.
+- Côté application : le mot de passe est lu depuis le fichier secret monté dans `/run/secrets/`, puis fourni au driver MongoDB via l'objet d'authentification `options.Credential` (les identifiants ne transitent pas par la chaîne de connexion).
+Le dossier `secrets/` est listé dans `.gitignore`.
+ 
+### Les réseaux Docker
+ 
+Docker crée par défaut trois réseaux : `bridge`, `host` et `none`.
+ 
+- **bridge (par défaut)** : un conteneur lancé avec `docker run` sans option `--network` rejoint le réseau `bridge` par défaut. Les conteneurs y communiquent par adresse IP, mais **pas par leur nom** (pas de résolution DNS intégrée).
+- **host** : le conteneur partage directement la pile réseau de l'hôte, sans isolation ni translation de ports.
+- **réseau bridge personnalisé** : c'est ce que crée automatiquement Docker Compose. Contrairement au bridge par défaut, il fournit une **résolution DNS interne** : un service peut joindre un autre par son **nom de service** (ici l'application joint MongoDB via `mongo`). C'est pourquoi la variable `MONGODB_HOST` vaut `mongo`.
+L'isolation est réalisée au niveau du système d'exploitation via les **network namespaces** du noyau Linux (chaque conteneur possède sa propre pile réseau), reliés par des **paires d'interfaces virtuelles (veth)** au bridge, le filtrage et la translation d'adresses étant gérés par **iptables/nftables**.
+ 
+---
+ 
+## Brief 2 — Mise à l'échelle et load balancing
+ 
+> Section en cours. Objectif : mettre l'application à l'échelle (plusieurs réplicas) et placer un load balancer devant elle.
+ 
+### Objectif
+ 
+Passer d'un unique conteneur applicatif à **plusieurs réplicas** pour absorber davantage de trafic, et ajouter un **load balancer** (image `dockercloud/haproxy`) agissant comme **reverse proxy** : ce n'est plus l'application qui est exposée directement sur le port 5000, mais le load balancer placé devant les réplicas.
+ 
+### Démarche
+ 
+1. Tenter une mise à l'échelle de l'application via Compose (`docker compose up --scale app=3`, ou la clé `deploy.replicas`).
+2. Retirer l'exposition directe du port de l'application pour autoriser plusieurs réplicas (deux conteneurs ne peuvent pas publier le même port hôte).
+3. Constater que l'application n'est plus joignable depuis le web.
+4. Ajouter un service **load balancer** dans `compose.yml`.
+5. Le configurer pour rediriger le trafic vers les réplicas de l'application Go.
+6. Contacter à nouveau l'application, cette fois via le load balancer.
+7. Répéter les requêtes en observant les logs des réplicas pour vérifier la répartition.
+8. Constater que le trafic est distribué équitablement entre les réplicas.
+### Vérification de la répartition
+ 
+```bash
+# Envoyer plusieurs requêtes
+for i in $(seq 1 10); do curl -s localhost/ > /dev/null; done
+ 
+# Observer que les requêtes se répartissent entre les réplicas
+docker compose logs app
+```
+ 
+### Bonus
+ 
+- Chiffrement du trafic vers le load balancer via **TLS** (application accessible uniquement en `https://`).
+- Séparation réseau : le load balancer tourne dans un réseau **front-end**, tandis que l'application et la base de données partagent un réseau **back-end** isolé.
+---
+ 
+## Structure du dépôt
+ 
+```
+.
+├── compose.yml            # orchestration des services
+├── Dockerfile             # build multi-stage de l'application Go
+├── .dockerignore
+├── .gitignore             # exclut notamment secrets/
+├── main.go                # point d'entrée, connexion MongoDB
+├── handlers.go            # handlers HTTP
+├── go.mod / go.sum
+├── Makefile               # cibles utilitaires
+└── secrets/               # NON versionné — contient mongo_password.txt
+```
+ 
+---
+ 
+## Critères couverts
+ 
+**Brief 1**
+- [x] Une seule commande démarre l'infrastructure
+- [x] Application accessible sur le port 5000
+- [x] Conteneurs en tâche de fond avec redémarrage automatique
+- [x] Données MongoDB persistées dans un volume
+- [x] Rebuild/redémarrage automatique de l'app à chaque modification `.go`
+- [x] Mot de passe via secret Docker, exclu de Git
+- [x] Application démarrée uniquement après que la base soit prête
 
-## Integrate with your tools
-
-* [Set up project integrations](https://gitlab.com/simplon-tls-devops/compose-go-mongodb/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+**Brief 2**
+- [ ] L'application reste accessible
+- [ ] Le load balancer reçoit le trafic
+- [ ] Le trafic est distribué entre les réplicas (vérifié via les logs)
